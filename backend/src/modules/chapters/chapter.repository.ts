@@ -1,5 +1,6 @@
 import { getSchemaCapabilities, hasColumn } from '../../config/schema-capabilities.js';
 import { query } from '../../config/database.js';
+import { unsupportedOperation } from '../../shared/errors/app-error.js';
 import { toChapterRecord, type ChapterRecord, type ChapterRow } from './chapter.types.js';
 
 /**
@@ -36,7 +37,14 @@ export async function list(
   const columns = await projection();
 
   // Filtering by section is only possible once the verified column exists.
-  const hasSectionFilter = Boolean(sectionCode) && hasColumn(capabilities, 'cet_chapter_notes', 'section_code');
+  // Refuse rather than silently returning an unfiltered list.
+  if (sectionCode && !hasColumn(capabilities, 'cet_chapter_notes', 'section_code')) {
+    throw unsupportedOperation(
+      'Filtering chapters by section requires the verified chapter-to-section mapping, which has not been applied to the database yet.',
+    );
+  }
+
+  const hasSectionFilter = Boolean(sectionCode);
   const where = hasSectionFilter ? `WHERE UPPER(c.section_code) = UPPER($1)` : '';
   const pageParams: unknown[] = hasSectionFilter ? [sectionCode, limit, offset] : [limit, offset];
   const countParams: unknown[] = hasSectionFilter ? [sectionCode] : [];
