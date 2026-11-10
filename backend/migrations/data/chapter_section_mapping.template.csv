@@ -1,0 +1,7 @@
+chapter_code,section_code,source_page,source_reference
+# Fill one row per chapter (97 chapters) from the CET 2022 VERSION updated June 2025 PDF.
+# chapter_code: two digits, e.g. 01
+# section_code: exactly as stored in cet_section_notes.section_code
+# source_page: PDF page where the chapter-to-section membership is printed
+# source_reference: quotation/heading from the source confirming the membership
+# Chapter 77 must be reviewed explicitly and flagged, not inferred.
