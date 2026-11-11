@@ -80,6 +80,10 @@ const envSchema = z
 
     DATABASE_URL: optionalConnectionString,
     DATABASE_SSL: booleanFromString(true),
+    /** Verify the database server certificate (recommended: true). */
+    DATABASE_SSL_VERIFY: booleanFromString(true),
+    /** Path to a PEM root certificate when the database uses a private CA. */
+    DATABASE_SSL_CA_PATH: z.string().trim().max(1024).optional(),
     DATABASE_POOL_MAX: integerFromString(10, 1, 50),
     DATABASE_CONNECTION_TIMEOUT_MS: integerFromString(10_000, 500, 120_000),
     DATABASE_IDLE_TIMEOUT_MS: integerFromString(30_000, 1_000, 600_000),

@@ -21,6 +21,8 @@ export interface TariffView extends TariffRecord {
 export interface HsCodeLookupResult {
   matches: TariffView[];
   ambiguous: boolean;
+  /** Distinct schedules represented among the matches. */
+  schedules: Array<string | null>;
   normalization: {
     input: string;
     normalized: string;
@@ -61,6 +63,7 @@ export async function getTariffsByHsCode(rawCode: string): Promise<HsCodeLookupR
   return {
     matches: matches.map(toTariffView),
     ambiguous: matches.length > 1,
+    schedules: [...new Set(matches.map((match) => match.scheduleType))],
     normalization: {
       input: normalized.raw,
       normalized: normalized.normalized,

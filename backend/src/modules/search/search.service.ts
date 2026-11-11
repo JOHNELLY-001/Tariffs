@@ -24,12 +24,13 @@ export interface SearchResult {
     text: string;
     normalizedCode: string;
     chapterCode: string | null;
+    scheduleType: string | null;
   };
   warnings: string[];
 }
 
 export async function searchTariffs(
-  input: { q: string; chapterCode?: string },
+  input: { q: string; chapterCode?: string; scheduleType?: string },
   page: { pageSize: number; offset: number },
 ): Promise<SearchResult> {
   const normalized = normalizeHsCode(input.q);
@@ -39,6 +40,7 @@ export async function searchTariffs(
     text: input.q,
     normalizedCode,
     chapterCode: input.chapterCode ?? null,
+    scheduleType: input.scheduleType ?? null,
     limit: page.pageSize,
     offset: page.offset,
   });
@@ -67,6 +69,7 @@ export async function searchTariffs(
       text: input.q,
       normalizedCode,
       chapterCode: input.chapterCode ?? null,
+      scheduleType: input.scheduleType ?? null,
     },
     warnings,
   };

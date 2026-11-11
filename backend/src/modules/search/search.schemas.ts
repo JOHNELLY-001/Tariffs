@@ -13,6 +13,12 @@ export const searchQuerySchema = paginationQuerySchema.extend({
     .trim()
     .regex(/^\d{1,2}$/, 'must be a one- or two-digit chapter code')
     .optional(),
+  /**
+   * Optional schedule discriminator. Kept as a free string (validated by length)
+   * so a new source schedule does not require a code change; unknown values
+   * simply match nothing.
+   */
+  schedule_type: z.string().trim().max(40, 'must be at most 40 characters').optional(),
 });
 
 export type SearchQuery = z.infer<typeof searchQuerySchema>;

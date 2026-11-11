@@ -10,7 +10,7 @@ export const searchTariffs: RequestHandler = async (_req, res) => {
   const query = getValidated<SearchQuery>(res, 'query');
   const page = toPageRequest(query);
   const result = await searchService.searchTariffs(
-    { q: query.q, chapterCode: query.chapter_code },
+    { q: query.q, chapterCode: query.chapter_code, scheduleType: query.schedule_type },
     page,
   );
 

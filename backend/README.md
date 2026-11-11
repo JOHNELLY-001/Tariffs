@@ -49,6 +49,8 @@ only `.env.example` is committed.
 |---|---|
 | `DATABASE_URL` | Neon connection string. Required in production; the API returns `503` until it is set. |
 | `DATABASE_SSL` | TLS for the database connection (default `true`). |
+| `DATABASE_SSL_VERIFY` | Verify the database server certificate chain and hostname (default `true`). Set to `false` only as a documented exception. |
+| `DATABASE_SSL_CA_PATH` | Optional PEM root certificate path when the provider uses a private CA. |
 | `DATABASE_POOL_MAX`, `DATABASE_CONNECTION_TIMEOUT_MS`, `DATABASE_IDLE_TIMEOUT_MS`, `DATABASE_STATEMENT_TIMEOUT_MS` | Pool and statement limits. |
 | `DATABASE_URL_READONLY` | Read-only connection used only by inspection scripts. |
 | `API_BASE_PATH` | Versioned base path (default `/api/v1`). |
@@ -82,7 +84,7 @@ Base path: `/api/v1` (interactive reference at `/api/v1/docs`, raw contract at
 |---|---|---|
 | GET | `/health/live` | Liveness; never touches the database. |
 | GET | `/health/ready` | Readiness; verifies database connectivity. |
-| GET | `/search?q=&chapter_code=` | Ranked search with `matchType` and `relevance`. |
+| GET | `/search?q=&chapter_code=&schedule_type=` | Ranked search with `matchType` and `relevance`; optional schedule filter. |
 | GET | `/tariffs/:id` | Tariff line by database id. |
 | GET | `/tariffs/hs/:code` | Exact HS-code lookup; all duplicates returned. |
 | GET | `/tariffs/:id/notes` | Chapter, section and subheading-note context. |
@@ -113,13 +115,34 @@ unavailable). Internal errors never expose SQL, stack traces or credentials.
   classification.
 - `rate` is returned verbatim. `rateAnalysis` is a **derived** classification
   (`percentage`, `specific`, `compound`, `sensitive_item`, `free`, `unknown`).
-- `SI` is Sensitive Items treatment; it is never parsed as a number.
-- Duplicate HS codes return every match with `meta.ambiguous: true`; none is
-  selected automatically.
+- `SI` is Sensitive Items treatment; it is never parsed as a number. For an SI
+  rate, `/tariffs/:id/notes` adds `sensitiveItemsReference` listing the
+  `SENSITIVE_ITEMS` schedule rows that share the HS code (a cross-reference, not
+  a substituted rate).
+- `scheduleType` (`MAIN_TARIFF`, `SENSITIVE_ITEMS`, …) is returned on every
+  tariff line. Duplicate codes across schedules stay separate rows, and
+  `/search?schedule_type=` can restrict results without hiding the distinction.
+- Duplicate HS codes return every match with `meta.ambiguous: true` and
+  `meta.schedules`; none is selected automatically.
 - Missing rates, quantities and notes stay `null` and are reported in
   `warnings`.
 - Relationships that depend on unapplied migrations are reported as
   incomplete (`contextComplete: false`), never guessed.
+
+### Database TLS
+
+The connection string's `sslmode` parameter is removed and TLS is configured
+explicitly, so behaviour does not silently change when `pg` v9 adopts libpq's
+weaker `require` semantics:
+
+- `DATABASE_SSL_VERIFY=true` (default) verifies the server certificate chain
+  and hostname and is tested against the Neon pooler.
+- Supply `DATABASE_SSL_CA_PATH` when the provider uses a private CA instead of
+  a publicly trusted chain.
+- `DATABASE_SSL_VERIFY=false` logs a warning at startup; use it only as a
+  documented exception.
+- In `DATABASE_URL`, prefer `sslmode=verify-full` or omit `sslmode` entirely.
+  Avoid bare `sslmode=require` in new configuration.
 
 ## Database and migrations
 
@@ -137,6 +160,11 @@ Migration files live in `migrations/` as `.preflight.sql`, `.up.sql`,
 5. Records version + SHA-256 checksum in `cet_schema_migrations`.
 6. Statically rejects `TRUNCATE`, `DELETE FROM`, `DROP TABLE` and
    `DROP COLUMN` on protected tables in forward scripts.
+
+`0009` adds core PostgreSQL indexes only (full-text, normalized HS code and
+`schedule_type`) and installs nothing. The optional trigram index is isolated in
+`0010` because it requires the `pg_trgm` extension and the `CREATE EXTENSION`
+privilege. The API is fully functional with neither index applied.
 
 The proposal and its approval gates are documented in
 [`docs/migrations/M2-proposal.md`](docs/migrations/M2-proposal.md). No migration
@@ -164,9 +192,10 @@ tests/           unit, API and (conditional) live-database integration tests
 npm test
 ```
 
-78 tests run without a database (unit + API). Eleven integration tests cover the
-live dataset and are skipped unless `DATABASE_URL` is set. Point that at a Neon
-branch or a dedicated test database — never production.
+108 tests run across unit, API and live-database suites. The live integration
+tests (16) run automatically when `DATABASE_URL` is set and are skipped
+otherwise. Point that at a Neon branch or a dedicated test database — never
+production.
 
 ## Deployment notes
 

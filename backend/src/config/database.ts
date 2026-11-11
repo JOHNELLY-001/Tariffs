@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
 import { databaseError, databaseNotConfigured } from '../shared/errors/app-error.js';
 import { env } from './env.js';
@@ -10,22 +11,94 @@ import { logger } from './logger.js';
  * `/health/live` plus documentation — even when DATABASE_URL is not yet
  * configured. Every database call goes through `query()`, which uses
  * parameterized SQL only.
+ *
+ * TLS policy:
+ *  - `sslmode` is removed from the connection string so pg-connection-string
+ *    cannot apply ambiguous/legacy semantics (or emit its v2 deprecation
+ *    warning). TLS is configured explicitly here instead.
+ *  - Certificates are verified by default (`DATABASE_SSL_VERIFY=true`).
+ *  - A private CA (for example Neon's root certificate) can be supplied with
+ *    `DATABASE_SSL_CA_PATH`.
+ *  - `sslmode=disable` in the URL is still honoured as an explicit opt-out.
  */
 
+
+
 let pool: Pool | undefined;
+let warnedAboutVerification = false;
+
+export interface ConnectionConfig {
+  connectionString: string;
+  ssl: false | { rejectUnauthorized: boolean; ca?: string };
+}
+
+function readCa(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `DATABASE_SSL_CA_PATH could not be read (${(error as NodeJS.ErrnoException).code ?? 'unknown error'}). ` +
+        'Provide a readable PEM file or unset the variable.',
+    );
+  }
+}
+
+/**
+ * Build pool configuration from the validated environment.
+ *
+ * Exported so the migration runner and inspection scripts use exactly the same
+ * TLS and connection semantics as the API.
+ */
+export function buildConnectionConfig(options: { applicationName?: string } = {}): ConnectionConfig {
+  if (!env.DATABASE_URL) {
+    throw databaseNotConfigured();
+  }
+
+  const url = new URL(env.DATABASE_URL);
+  const requestedSslMode = url.searchParams.get('sslmode')?.toLowerCase() ?? null;
+
+  // Removed deliberately: our explicit `ssl` object is authoritative.
+  url.searchParams.delete('sslmode');
+  url.searchParams.delete('uselibpqcompat');
+
+  const sslDisabledByUrl = requestedSslMode === 'disable';
+  const sslEnabled = env.DATABASE_SSL && !sslDisabledByUrl;
+
+  if (!sslEnabled) {
+    if (!env.DATABASE_SSL_VERIFY) {
+      logger.warn('TLS is disabled for the tariff database connection (DATABASE_SSL=false or sslmode=disable).');
+    }
+    return { connectionString: url.toString(), ssl: false };
+  }
+
+  const ca = readCa(env.DATABASE_SSL_CA_PATH);
+
+  if (!env.DATABASE_SSL_VERIFY && !warnedAboutVerification) {
+    warnedAboutVerification = true;
+    logger.warn(
+      'TLS certificate verification is DISABLED (DATABASE_SSL_VERIFY=false). Set DATABASE_SSL_CA_PATH to the database CA and re-enable verification.',
+    );
+  }
+
+  return {
+    connectionString: url.toString(),
+    ssl: {
+      rejectUnauthorized: env.DATABASE_SSL_VERIFY,
+      ...(ca ? { ca } : {}),
+    },
+  };
+}
 
 export function isDatabaseConfigured(): boolean {
   return env.isDatabaseConfigured;
 }
 
 export function getPool(): Pool {
-  if (!env.DATABASE_URL) {
-    throw databaseNotConfigured();
-  }
-
   if (!pool) {
+    const connection = buildConnectionConfig();
     pool = new Pool({
-      connectionString: env.DATABASE_URL,
+      ...connection,
       max: env.DATABASE_POOL_MAX,
       connectionTimeoutMillis: env.DATABASE_CONNECTION_TIMEOUT_MS,
       idleTimeoutMillis: env.DATABASE_IDLE_TIMEOUT_MS,
@@ -33,8 +106,6 @@ export function getPool(): Pool {
       query_timeout: env.DATABASE_STATEMENT_TIMEOUT_MS,
       application_name: 'cet-tariff-backend',
       keepAlive: true,
-      // Neon presents a managed certificate chain; TLS remains mandatory.
-      ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined,
     });
 
     pool.on('error', (error) => {

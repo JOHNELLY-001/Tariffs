@@ -1,5 +1,5 @@
 import { notFound } from '../../shared/errors/app-error.js';
-import { chapterFromStoredCode } from '../../shared/utils/hs-code.js';
+import { chapterFromStoredCode, normalizeHsCode } from '../../shared/utils/hs-code.js';
 import { normalizeChapterCode, normalizeSectionCode } from '../../shared/utils/codes.js';
 import { getSchemaCapabilities } from '../../config/schema-capabilities.js';
 import * as chapterRepository from '../chapters/chapter.repository.js';
@@ -29,6 +29,14 @@ export interface ClassificationContext {
   chapter: ChapterRecord | null;
   section: SectionRecord | null;
   subheadingNotes: SubheadingNoteRecord[];
+  /**
+   * When the main-schedule rate is `SI`, the Sensitive Items schedule rows that
+   * share this HS code. A factual cross-reference — not a substitution.
+   */
+  sensitiveItemsReference: {
+    reason: string;
+    matches: TariffView[];
+  } | null;
   contextComplete: boolean;
   chapterSource: 'verified_column' | 'derived_from_hs_code' | 'none';
   warnings: string[];
@@ -36,6 +44,8 @@ export interface ClassificationContext {
 }
 
 const MAX_CONTEXT_NOTES = 100;
+const MAX_SENSITIVE_ITEM_MATCHES = 5;
+const SENSITIVE_ITEMS_SCHEDULE = 'SENSITIVE_ITEMS';
 
 export async function getTariffContext(tariffId: number): Promise<ClassificationContext> {
   const capabilities = await getSchemaCapabilities();
@@ -54,16 +64,43 @@ export async function getTariffContext(tariffId: number): Promise<Classification
       ? 'derived_from_hs_code'
       : 'none';
 
-  // Bounded, parallel context retrieval — four queries at most, never one per note.
+  const tariff = toTariffView(tariffRecord);
+  const normalizedCode = normalizeHsCode(tariffRecord.hsCode);
+
+  // A main-schedule `SI` rate points at Sensitive Items treatment. The matching
+  // SI-schedule rows are looked up as a factual cross-reference; the original
+  // rate text is never reinterpreted and no row is substituted.
+  const isSensitiveItemRate = tariff.rateAnalysis.isSensitiveItem;
+  const isSensitiveItemsScheduleRow = tariff.scheduleType === SENSITIVE_ITEMS_SCHEDULE;
+  const needsSensitiveItemsLookup =
+    isSensitiveItemRate && !isSensitiveItemsScheduleRow && normalizedCode.isValid;
+
+  // Bounded, parallel context retrieval — five queries at most, never one per note.
   const chapter = chapterCode
     ? await chapterRepository.findByCode(normalizeChapterCode(chapterCode))
     : null;
 
   const sectionCode = chapter?.sectionCode ?? null;
-  const [section, subheadingNotes] = await Promise.all([
+  const [section, subheadingNotes, sensitiveItemsMatches] = await Promise.all([
     sectionCode ? sectionRepository.findByCode(normalizeSectionCode(sectionCode)) : Promise.resolve(null),
     noteRepository.findForClassification(chapterCode, sectionCode, MAX_CONTEXT_NOTES),
+    needsSensitiveItemsLookup
+      ? tariffRepository.findByNormalizedHsCodeAndSchedule(
+          normalizedCode.normalized,
+          SENSITIVE_ITEMS_SCHEDULE,
+          MAX_SENSITIVE_ITEM_MATCHES,
+        )
+      : Promise.resolve([]),
   ]);
+
+  const sensitiveItemsReference =
+    isSensitiveItemRate && !isSensitiveItemsScheduleRow
+      ? {
+          reason:
+            'The stored rate text is an SI (Sensitive Items) reference. The SENSITIVE_ITEMS schedule entries sharing this HS code are listed for reference only; no rate is inferred.',
+          matches: sensitiveItemsMatches.map(toTariffView),
+        }
+      : null;
 
   const warnings: string[] = [];
   if (!capabilities.tariffChapterCodeColumn) {
@@ -92,12 +129,23 @@ export async function getTariffContext(tariffId: number): Promise<Classification
   if (subheadingNotes.length === 0) {
     warnings.push('NO_SUBHEADING_NOTES: no subheading guidance is recorded for this chapter or section.');
   }
+  if (isSensitiveItemRate && isSensitiveItemsScheduleRow) {
+    warnings.push(
+      'SENSITIVE_ITEMS_SCHEDULE_ROW: this record is itself from the SENSITIVE_ITEMS schedule, so the SI rate belongs to this entry.',
+    );
+  }
+  if (needsSensitiveItemsLookup && sensitiveItemsMatches.length === 0) {
+    warnings.push(
+      'SENSITIVE_ITEMS_ENTRY_NOT_FOUND: the rate references Sensitive Items treatment, but no SENSITIVE_ITEMS schedule record shares this HS code.',
+    );
+  }
 
   return {
-    tariff: toTariffView(tariffRecord),
+    tariff,
     chapter,
     section,
     subheadingNotes,
+    sensitiveItemsReference,
     contextComplete: Boolean(chapter && section),
     chapterSource,
     warnings,

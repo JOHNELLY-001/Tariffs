@@ -11,7 +11,17 @@ export interface TariffRecord {
   rate: string | null;
   heading: string | null;
   sourcePage: number | null;
-  extractionPhase: string | null;
+  /**
+   * Historical extraction phase number as stored (integer in the live schema).
+   * Kept as a source fact; never interpreted.
+   */
+  extractionPhase: number | null;
+  /**
+   * Schedule the row belongs to (`MAIN_TARIFF`, `SENSITIVE_ITEMS`, …).
+   * Essential for keeping Sensitive Items entries distinguishable from the
+   * main schedule. Nullable because older rows may not carry it.
+   */
+  scheduleType: string | null;
   createdAt: string | null;
   /** Chapter code when a verified column exists in the live schema. */
   chapterCode: string | null;
@@ -25,10 +35,14 @@ export interface TariffRow {
   rate: string | null;
   heading: string | null;
   source_page: number | string | null;
-  extraction_phase: string | null;
+  extraction_phase: number | string | null;
+  schedule_type: string | null;
   created_at: Date | string | null;
   chapter_code: string | null;
 }
+
+const toNumberOrNull = (value: number | string | null): number | null =>
+  value === null || value === undefined || value === '' ? null : Number(value);
 
 export function toTariffRecord(row: TariffRow): TariffRecord {
   return {
@@ -38,8 +52,9 @@ export function toTariffRecord(row: TariffRow): TariffRecord {
     quantity: row.quantity,
     rate: row.rate,
     heading: row.heading,
-    sourcePage: row.source_page === null || row.source_page === undefined ? null : Number(row.source_page),
-    extractionPhase: row.extraction_phase,
+    sourcePage: toNumberOrNull(row.source_page),
+    extractionPhase: toNumberOrNull(row.extraction_phase),
+    scheduleType: row.schedule_type,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
     chapterCode: row.chapter_code,
   };

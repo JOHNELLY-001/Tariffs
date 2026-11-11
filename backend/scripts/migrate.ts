@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { buildConnectionConfig } from '../src/config/database.js';
 import { env } from '../src/config/env.js';
 
 /**
@@ -130,10 +131,11 @@ function readonlyConnection(): pg.Pool {
   if (!env.DATABASE_URL) {
     throw new Error('DATABASE_URL must be configured for migration commands');
   }
+  // Same TLS and connection semantics as the API (see buildConnectionConfig).
+  const connection = buildConnectionConfig();
   return new pg.Pool({
-    connectionString: env.DATABASE_URL,
+    ...connection,
     max: 1,
-    ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined,
     application_name: 'cet-migrate',
     statement_timeout: 60_000,
   });

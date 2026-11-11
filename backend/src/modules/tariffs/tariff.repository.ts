@@ -45,8 +45,32 @@ export async function findByNormalizedHsCode(
   return result.rows.map(toTariffRecord);
 }
 
-/** Whether a verified chapter_code column exists (migration-dependent). */
-export async function chapterLinkStrategy(): Promise<{
+/**
+ * Records with the same normalized code in a specific schedule.
+ *
+ * Used to resolve a main-schedule `SI` (Sensitive Items) reference into the
+ * corresponding SENSITIVE_ITEMS rows — as a factual cross-reference, never as
+ * an automatic substitution.
+ */
+export async function findByNormalizedHsCodeAndSchedule(
+  normalizedCode: string,
+  scheduleType: string,
+  limit: number,
+): Promise<TariffRecord[]> {
+  const capabilities = await getSchemaCapabilities();
+  const result = await query<TariffRow>(
+    `SELECT ${tariffProjection(capabilities)}
+       ${FROM}
+      WHERE ${SQL_NORMALIZED_HS_CODE} = $1
+        AND UPPER(t.schedule_type) = UPPER($2)
+      ORDER BY t.id
+      LIMIT $3`,
+    [normalizedCode, scheduleType, limit],
+  );
+  return result.rows.map(toTariffRecord);
+}
+
+/** Whether a verified chapter_code column exists (migration-dependent). */export async function chapterLinkStrategy(): Promise<{
   capabilities: SchemaCapabilities;
   usesVerifiedColumn: boolean;
 }> {

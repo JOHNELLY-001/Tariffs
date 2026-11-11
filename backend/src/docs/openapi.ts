@@ -55,7 +55,7 @@ const rateAnalysis: JsonSchema = {
 const tariff: JsonSchema = {
   type: 'object',
   description: 'A tariff-line record. Source values are returned exactly as stored.',
-  required: ['id', 'hsCode', 'description', 'quantity', 'rate', 'heading', 'sourcePage', 'extractionPhase', 'createdAt', 'chapterCode', 'rateAnalysis'],
+  required: ['id', 'hsCode', 'description', 'quantity', 'rate', 'heading', 'sourcePage', 'extractionPhase', 'scheduleType', 'createdAt', 'chapterCode', 'rateAnalysis'],
   properties: {
     id: { type: 'integer', description: 'Stable database identifier.' },
     hsCode: { type: 'string', description: 'HS code exactly as stored; never rewritten.' },
@@ -64,7 +64,16 @@ const tariff: JsonSchema = {
     rate: { type: 'string', nullable: true, description: 'Original source rate text (may be SI, compound, specific or null).' },
     heading: nullable('string'),
     sourcePage: { type: 'integer', nullable: true },
-    extractionPhase: nullable('string'),
+    extractionPhase: {
+      type: 'integer',
+      nullable: true,
+      description: 'Extraction phase number as stored (integer in the live schema). A source fact, never interpreted.',
+    },
+    scheduleType: {
+      type: 'string',
+      nullable: true,
+      description: 'Schedule the row belongs to, for example MAIN_TARIFF or SENSITIVE_ITEMS. Preserved verbatim.',
+    },
     createdAt: { type: 'string', nullable: true, format: 'date-time' },
     chapterCode: { ...nullable('string'), description: 'Verified chapter link when the column exists; otherwise null.' },
     rateAnalysis: { $ref: '#/components/schemas/RateAnalysis' },
@@ -176,12 +185,23 @@ const componentSchemas: Record<string, JsonSchema> = {
   SubheadingNote: subheadingNote,
   ClassificationContext: {
     type: 'object',
-    required: ['tariff', 'chapter', 'section', 'subheadingNotes', 'contextComplete', 'chapterSource', 'warnings', 'disclaimer'],
+    required: ['tariff', 'chapter', 'section', 'subheadingNotes', 'sensitiveItemsReference', 'contextComplete', 'chapterSource', 'warnings', 'disclaimer'],
     properties: {
       tariff: { $ref: '#/components/schemas/Tariff' },
       chapter: { allOf: [{ $ref: '#/components/schemas/Chapter' }], nullable: true },
       section: { allOf: [{ $ref: '#/components/schemas/Section' }], nullable: true },
       subheadingNotes: { type: 'array', items: { $ref: '#/components/schemas/SubheadingNote' } },
+      sensitiveItemsReference: {
+        type: 'object',
+        nullable: true,
+        description:
+          'Present only when the stored rate is an SI (Sensitive Items) reference. Lists SENSITIVE_ITEMS schedule rows sharing the HS code — a factual cross-reference, never a substituted rate.',
+        required: ['reason', 'matches'],
+        properties: {
+          reason: { type: 'string' },
+          matches: { type: 'array', items: { $ref: '#/components/schemas/Tariff' } },
+        },
+      },
       contextComplete: { type: 'boolean', description: 'True only when chapter and section are both verified.' },
       chapterSource: { type: 'string', enum: ['verified_column', 'derived_from_hs_code', 'none'] },
       warnings: { type: 'array', items: { type: 'string' } },
@@ -311,6 +331,13 @@ export function buildOpenApiDocument(apiBasePath: string) {
           parameters: [
             { name: 'q', in: 'query', required: true, schema: { type: 'string', minLength: 2, maxLength: 120 } },
             { name: 'chapter_code', in: 'query', required: false, schema: { type: 'string', pattern: '^\\d{1,2}$' } },
+            {
+              name: 'schedule_type',
+              in: 'query',
+              required: false,
+              description: 'Restrict results to one schedule, for example MAIN_TARIFF or SENSITIVE_ITEMS.',
+              schema: { type: 'string', maxLength: 40 },
+            },
             pageParam,
             pageSizeParam,
           ],

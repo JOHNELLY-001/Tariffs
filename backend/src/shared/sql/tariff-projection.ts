@@ -19,7 +19,8 @@ export function tariffProjection(capabilities: SchemaCapabilities, alias = 't'):
     `${alias}.rate AS rate`,
     `${optional('heading', 'NULL::text')} AS heading`,
     `${optional('source_page', 'NULL::integer')} AS source_page`,
-    `${optional('extraction_phase', 'NULL::text')} AS extraction_phase`,
+    `${optional('extraction_phase', 'NULL::integer')} AS extraction_phase`,
+    `${optional('schedule_type', 'NULL::text')} AS schedule_type`,
     `${optional('created_at', 'NULL::timestamptz')} AS created_at`,
     `${optional('chapter_code', 'NULL::text')} AS chapter_code`,
   ].join(', ');

@@ -26,14 +26,21 @@ export interface CalculationTariff {
   rate: string | null;
   rateAnalysis: RateAnalysis;
   sourcePage: number | null;
-  extractionPhase: string | null;
+  extractionPhase: number | null;
+  scheduleType: string | null;
 }
 
 export interface ImportCostResult {
   state: CalculationState;
   inputs: ImportCostRequest;
   tariff: CalculationTariff | null;
-  candidates: Array<{ id: number; hsCode: string; rate: string | null; extractionPhase: string | null }>;
+  candidates: Array<{
+    id: number;
+    hsCode: string;
+    rate: string | null;
+    extractionPhase: number | null;
+    scheduleType: string | null;
+  }>;
   valuation: ValuationResult;
   duty: DutyResult;
   tax: TaxResult;
@@ -59,6 +66,7 @@ export async function calculateImportCost(input: ImportCostRequest): Promise<Imp
         rateAnalysis: selected.rateAnalysis,
         sourcePage: selected.sourcePage,
         extractionPhase: selected.extractionPhase,
+        scheduleType: selected.scheduleType,
       }
     : null;
 
@@ -113,6 +121,7 @@ export async function calculateImportCost(input: ImportCostRequest): Promise<Imp
       hsCode: match.hsCode,
       rate: match.rate,
       extractionPhase: match.extractionPhase,
+      scheduleType: match.scheduleType,
     })),
     valuation,
     duty,

@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { buildConnectionConfig } from '../src/config/database.js';
 import { env } from '../src/config/env.js';
 
 /**
@@ -76,9 +77,8 @@ async function main(): Promise<void> {
   }
 
   const pool = new pg.Pool({
-    connectionString: env.DATABASE_URL,
+    ...buildConnectionConfig(),
     max: 1,
-    ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined,
     application_name: 'cet-db-check',
     statement_timeout: 20_000,
   });

@@ -11,10 +11,15 @@ import type { TariffRow } from '../tariffs/tariff.types.js';
  * Strategy: PostgreSQL full-text search (`simple` configuration — no stemming,
  * which suits product descriptions) with an ILIKE partial fallback, plus
  * normalized HS-code prefix matching. Exact code matches always rank first.
- * All predicates are parameterized and result sets are bounded.
  *
- * The GIN index this query should use is proposed in the M2 migration; until
- * that is approved the query remains correct, just not index-backed.
+ * The query is built by `buildSearchQuery()` — a pure function — so placeholder
+ * numbering can be unit-tested without a database. (An earlier version bound a
+ * chapter value that was never referenced when no chapter filter was supplied,
+ * which PostgreSQL rejects with SQLSTATE 08P01: "bind message supplies N
+ * parameters, but prepared statement requires N-1".)
+ *
+ * No extension is required: `to_tsvector` and `websearch_to_tsquery` are core
+ * PostgreSQL. GIN/trigram indexes are proposed separately in M2.
  */
 
 export interface SearchRow extends TariffRow {
@@ -26,23 +31,44 @@ export interface SearchParams {
   text: string;
   normalizedCode: string;
   chapterCode: string | null;
+  /** Optional schedule discriminator, e.g. MAIN_TARIFF / SENSITIVE_ITEMS. */
+  scheduleType: string | null;
   limit: number;
   offset: number;
 }
 
-export async function search(
-  params: SearchParams,
-): Promise<{ items: SearchRow[]; total: number }> {
-  const capabilities = await getSchemaCapabilities();
-  const chapterColumn = hasColumn(capabilities, 'cet_tariffs', 'chapter_code');
-  const hasChapterFilter = params.chapterCode !== null;
+export interface SearchStatement {
+  text: string;
+  values: unknown[];
+}
 
-  // $1 text, $2 normalized code, $3 chapter, $4 limit, $5 offset
-  const chapterPredicate = hasChapterFilter
-    ? chapterColumn
-      ? 'AND t.chapter_code = $3'
-      : `AND ${SQL_DERIVED_CHAPTER} = $3`
-    : '';
+export interface SearchQueryPlan {
+  list: SearchStatement;
+  count: SearchStatement;
+}
+
+export function buildSearchQuery(
+  params: SearchParams,
+  options: { chapterColumn: boolean; projection: string },
+): SearchQueryPlan {
+  // $1 search text, $2 normalized HS code. Optional filters take the next
+  // available placeholder index — and are only bound when referenced.
+  const values: unknown[] = [params.text, params.normalizedCode];
+  const predicates: string[] = [];
+
+  if (params.chapterCode !== null) {
+    const placeholder = `$${values.push(normalizeChapterCode(params.chapterCode))}`;
+    predicates.push(
+      options.chapterColumn
+        ? `AND t.chapter_code = ${placeholder}`
+        : `AND ${SQL_DERIVED_CHAPTER} = ${placeholder}`,
+    );
+  }
+
+  if (params.scheduleType !== null) {
+    const placeholder = `$${values.push(params.scheduleType)}`;
+    predicates.push(`AND UPPER(t.schedule_type) = UPPER(${placeholder})`);
+  }
 
   const where = `
     WHERE (
@@ -50,7 +76,7 @@ export async function search(
       OR to_tsvector('simple', COALESCE(t.description, '')) @@ websearch_to_tsquery('simple', $1)
       OR t.description ILIKE ('%' || $1 || '%')
     )
-    ${chapterPredicate}
+    ${predicates.join('\n    ')}
   `;
 
   const matchType = `
@@ -74,27 +100,42 @@ export async function search(
     END
   `;
 
-  const filterParams: unknown[] = [
-    params.text,
-    params.normalizedCode,
-    hasChapterFilter ? normalizeChapterCode(params.chapterCode as string) : null,
-  ];
+  // The count query reuses the filter values only; paging placeholders belong
+  // to the list statement alone.
+  const filterValues = [...values];
+  const limitPlaceholder = values.push(params.limit);
+  const offsetPlaceholder = values.push(params.offset);
+
+  return {
+    list: {
+      text: `SELECT ${options.projection},
+        ${matchType} AS match_type,
+        ${relevance} AS relevance
+        FROM cet_tariffs t
+        ${where}
+        ORDER BY relevance DESC, t.id ASC
+        LIMIT $${limitPlaceholder} OFFSET $${offsetPlaceholder}`,
+      values,
+    },
+    count: {
+      text: `SELECT COUNT(*)::text AS total FROM cet_tariffs t ${where}`,
+      values: filterValues,
+    },
+  };
+}
+
+export async function search(
+  params: SearchParams,
+): Promise<{ items: SearchRow[]; total: number }> {
+  const capabilities = await getSchemaCapabilities();
+  const plan = buildSearchQuery(params, {
+    chapterColumn: hasColumn(capabilities, 'cet_tariffs', 'chapter_code'),
+    projection: tariffProjection(capabilities),
+  });
 
   const [page, count] = await Promise.all([
-    query<SearchRow>(
-      `SELECT ${tariffProjection(capabilities)},
-              ${matchType} AS match_type,
-              ${relevance} AS relevance
-         FROM cet_tariffs t
-         ${where}
-        ORDER BY relevance DESC, t.id ASC
-        LIMIT $4 OFFSET $5`,
-      [...filterParams, params.limit, params.offset],
-    ),
-    query<{ total: string }>(
-      `SELECT COUNT(*)::text AS total FROM cet_tariffs t ${where}`,
-      filterParams,
-    ),
+    query<SearchRow>(plan.list.text, plan.list.values),
+    query<{ total: string }>(plan.count.text, plan.count.values),
   ]);
 
   return { items: page.rows, total: Number(count.rows[0]?.total ?? 0) };

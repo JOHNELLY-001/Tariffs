@@ -18,10 +18,11 @@ export const getTariffByHsCode: RequestHandler = async (_req, res) => {
     meta: {
       matchCount: result.matches.length,
       ambiguous: result.ambiguous,
+      schedules: result.schedules,
       normalization: result.normalization,
       notes: result.ambiguous
         ? [
-            'Multiple tariff records share this HS code (for example across schedules). All matches are returned; none is selected on your behalf.',
+            'Multiple tariff records share this HS code (for example across schedules). All matches are returned with their scheduleType; none is selected on your behalf.',
           ]
         : [],
       disclaimer: 'A tariff-code match is a candidate tariff line, not a legally confirmed classification ruling.',

@@ -15,7 +15,7 @@ project tables were not touched.
 | 3 — Classification context | Complete with documented gaps | Chapter via validated HS derivation; section and verified FKs gated on M2 |
 | 4 — Description search | Complete | Ranked FTS + partial fallback; index-backed once M2 is approved |
 | 5 — Calculation foundation | Complete | Contracts + rate classifier; every amount step returns `unsupported` |
-| 6 — Documentation and testing | Complete | OpenAPI generated from Zod validators, 78 tests, README, M2 proposal |
+| 6 — Documentation and testing | Complete | OpenAPI generated from Zod validators, 108 tests, README, M2 proposal |
 
 ## Files created
 
@@ -42,7 +42,7 @@ project tables were not touched.
 ### Documentation, migrations and tooling
 - `src/docs/openapi.ts`
 - `scripts/migrate.ts` (guarded runner), `scripts/db-check.ts` (read-only inspection)
-- `migrations/0001…0009` — 36 scripts (preflight/up/postflight/down)
+- `migrations/0001…0010` — 40 scripts (preflight/up/postflight/down)
 - `migrations/data/chapter_section_mapping.template.csv`
 - `docs/migrations/M2-proposal.md`, `docs/IMPLEMENTATION-REPORT.md`
 
@@ -64,8 +64,8 @@ project tables were not touched.
 ## Tests
 
 ```
-Test Files  9 passed | 1 skipped (10)
-Tests       78 passed | 11 skipped (89)
+Test Files  12 passed (12)
+Tests       108 passed (108)
 ```
 
 Passing without a database: HS-code normalization, rate classification
@@ -73,28 +73,73 @@ Passing without a database: HS-code normalization, rate classification
 validation (secrets never echoed), error envelope and validation details,
 security headers, request-ID handling, oversized/malformed bodies, OpenAPI
 shape, chapter/section code validation, calculation non-computation, migration
-discovery and destructive-statement guards.
+discovery and destructive-statement guards, search placeholder/bind invariants,
+and central error-handler containment.
 
-Skipped until `DATABASE_URL` is set: 11 live-database tests covering baseline
-counts, exact retrieval fidelity, duplicate-code ambiguity, context shape,
-pagination, ownership, search metadata and the unsupported calculation state.
+Live-database tests (16) cover baseline counts, exact retrieval fidelity,
+duplicate-code ambiguity, cross-schedule duplicates, SI cross-reference, context
+shape, pagination, ownership, search metadata, chapter-filtered search,
+`schedule_type` filtering and the unsupported calculation state. They run when
+`DATABASE_URL` is set and skip otherwise.
 
 ## Verification performed
 
 - `npm run typecheck` — clean.
-- `npm test` — 78 passed, 11 skipped, 0 failed.
+- `npm test` — 108 passed, 0 failed (live database configured).
 - `npm run build` — emits `dist/` with `dist/server.js`.
 - Compiled server smoke test: `/health/live` 200, `/health/ready` 503 without a
   database, `/api/v1/openapi.json` 200 (13 paths), unknown route 404,
   `/api/v1/tariffs/1` 503 with no credentials configured.
+
+## Post-release fix — search returned HTTP 503
+
+**Symptom:** `GET /api/v1/search?q=tea&pageSize=5` returned `503` with
+`DATABASE_ERROR`; the live integration test `performs description search with
+match metadata` failed.
+
+**Root cause:** in `search.repository.ts`, a chapter placeholder (`$3`) was
+always bound, but the chapter predicate was only emitted when `chapter_code` was
+supplied. With no chapter filter, PostgreSQL received three bind values for a
+statement that referenced two, and rejected it:
+
+```
+SQLSTATE 08P01
+bind message supplies 3 parameters, but prepared statement "" requires 2
+routine: exec_bind_message
+```
+
+No extension was involved: `to_tsvector` and `websearch_to_tsquery` are core
+PostgreSQL, and `regexp_replace` is core as well. Zero installed extensions was
+not the cause.
+
+**Fix:**
+
+- Replaced the hand-numbered SQL with an exported pure `buildSearchQuery()`
+  that appends each optional filter and its placeholder together, so a value is
+  bound only when its predicate is present.
+- Added unit tests asserting placeholder/bind symmetry for the no-filter,
+  chapter-only, schedule-only and all-filter cases.
+- Added an optional `schedule_type` search filter and preserved the distinction
+  between `MAIN_TARIFF` and `SENSITIVE_ITEMS` in retrieval, search metadata and
+  calculation candidates.
+- `extraction_phase` is typed and returned as an integer (matching the live
+  column) instead of text.
+- `/tariffs/:id/notes` now cross-references `SENSITIVE_ITEMS` rows when a
+  `MAIN_TARIFF` rate is `SI`, returning `sensitiveItemsReference` plus a
+  `SENSITIVE_ITEMS_ENTRY_NOT_FOUND` warning when no counterpart exists.
+- TLS is configured explicitly (`DATABASE_SSL_VERIFY`, `DATABASE_SSL_CA_PATH`);
+  `sslmode` is stripped so the pg v9 `require` semantics change cannot silently
+  weaken verification.
 
 ## Database dependencies (not applied)
 
 1. `cet_chapter_notes.section_code` + reviewed 97-row mapping + FK/index.
 2. `cet_tariffs.chapter_code` + backfill + FK/index.
 3. Subheading-note ownership `CHECK`.
-4. Search indexes (`pg_trgm`, GIN FTS, trigram, normalized HS-code expression).
-5. `cet_schema_migrations` bookkeeping table.
+4. `0009` — core search/schedule indexes (full-text, normalized HS code,
+   `schedule_type`); no extension.
+5. `0010` (optional) — `pg_trgm` extension + trigram index.
+6. `cet_schema_migrations` bookkeeping table.
 
 All are staged in `migrations/` with preflight, postflight and rollback scripts.
 Full proposal: `docs/migrations/M2-proposal.md`.
@@ -113,9 +158,9 @@ Full proposal: `docs/migrations/M2-proposal.md`.
 
 ## Outstanding issues
 
-1. **No credentials were provided**, so live schema, row counts, HS-code
-   duplicates, rate-string forms and code formats remain unverified. These block
-   M2 approval, not the implementation.
+1. **`pg_trgm` is not installed** on the live database (zero extensions). This is
+   not a functional blocker — search is core-only — but optional migration 0010
+   cannot be applied until the extension is approved and available.
 2. **CET 2022 PDF is not in the project.** The authoritative 97-row
    chapter→section mapping (with source pages) cannot be produced without it;
    Chapter 77 needs an explicit decision.
@@ -128,12 +173,13 @@ Full proposal: `docs/migrations/M2-proposal.md`.
 
 ## Exact next step
 
-1. Add `backend/.env.local` with `DATABASE_URL` (read-only role is sufficient for
-   inspection) and run `npm run db:check` → attach the output to the M2 record.
-2. Set `DATABASE_URL` and run `npm test` to enable the 11 integration tests.
+1. Keep `backend/.env` (or `.env.local`) local and git-ignored; run
+   `npm run db:check` to attach the live inspection to the M2 record.
+2. `npm test` with `DATABASE_URL` set → 108 passing (16 live).
 3. Review `docs/migrations/M2-proposal.md`; supply the 97-row mapping CSV from
    the CET PDF (Chapter 77 flagged) and approve or amend the proposal.
 4. After approval: apply on a Neon branch with
    `ALLOW_MIGRATE=true npm run db:migrate -- --apply`, capture
    `EXPLAIN (ANALYZE, BUFFERS)` before/after for `/search` and exact-code
-   lookup, then repeat on production.
+   lookup, then repeat on production. Apply 0010 only if `pg_trgm` is
+   acceptable to the database owner.

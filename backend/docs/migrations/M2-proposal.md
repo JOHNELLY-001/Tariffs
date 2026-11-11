@@ -12,7 +12,7 @@ corresponding flag is passed.
 | Verified chapter→section relationship | `cet_chapter_notes.section_code` does not exist | Add nullable column, load a reviewed 97-row mapping, add FK + index |
 | Verified tariff→chapter relationship | `cet_tariffs.chapter_code` does not exist | Add nullable column, backfill only from validated HS codes, add FK + index |
 | Subheading-note ownership | Enforced only by convention | Add `CHECK` that exactly one of `chapter_code`/`section_code` is populated |
-| Bounded, indexed search | No FTS/trigram/normalized-code index | Add `pg_trgm`, GIN FTS index, trigram index, normalized HS-code expression index |
+| Bounded, indexed search | No FTS/normalized-code/schedule index | 0009: core GIN FTS, normalized HS-code expression, `schedule_type` index (no extension). 0010 (optional): `pg_trgm` + trigram index |
 | Migration audit trail | None | Add `cet_schema_migrations` bookkeeping table |
 
 No column, note, rate, description or source-page value is deleted or rewritten.
@@ -43,6 +43,26 @@ npm run db:migrate                                 # dry run: preflights only
 Anything that contradicts this proposal stops the process — the proposal is
 updated, not forced.
 
+### 2.1 Live inspection result (2026-11-10)
+
+Read-only inspection confirmed:
+
+- Counts match the baseline: 5,966 / 97 / 21 / 76.
+- **Zero extensions installed**; `pg_trgm` is therefore *not* available today.
+  This affects only optional migration 0010 — search works without it.
+- `cet_tariffs` columns: `id bigint`, `hs_code varchar NOT NULL`,
+  `description text NOT NULL`, `quantity text`, `rate text`,
+  `source_page integer`, `extraction_phase integer`, `created_at timestamptz`,
+  `heading varchar`, `schedule_type varchar`.
+- `extraction_phase` is **integer** (not text) and is exposed as a number.
+- `schedule_type` distribution: `MAIN_TARIFF` 5,760 (phases 1–11),
+  `SENSITIVE_ITEMS` 206 (phase 12). 10 normalized HS codes appear under both
+  schedules; 50 rows have `rate = 'SI'`, all in `MAIN_TARIFF`.
+- `cet_chapter_notes.section_code` and `cet_tariffs.chapter_code` do **not**
+  exist yet (this proposal's 0002/0005).
+- Subheading-note chapter and section foreign keys are already present; the
+  ownership `CHECK` proposed in 0008 is still absent.
+
 ## 3. Ordered migrations
 
 | # | Migration | Preflight blocks when | Rollback |
@@ -55,7 +75,8 @@ updated, not forced.
 | 0006 | Backfill `chapter_code` from normalized HS codes | Malformed HS code, or derived chapter with no chapter record | Clear derived values |
 | 0007 | Add `fk_tariff_chapter` + index | Orphan chapter reference, non-unique chapter code | Drop constraint + index |
 | 0008 | Enforce subheading-note ownership | Any row with zero or two owners | Drop check constraint |
-| 0009 | Search + normalized-code indexes | `cet_tariffs` large enough that a non-concurrent build needs review | Drop the three indexes |
+| 0009 | Core search + schedule indexes (no extension) | `cet_tariffs` large enough that a non-concurrent build needs review | Drop the three indexes |
+| 0010 | **Optional** `pg_trgm` + trigram index | `pg_trgm` unavailable, or table needs a non-concurrent review | Drop the trigram index (extension retained) |
 
 Each migration is a four-file set:
 
@@ -93,12 +114,23 @@ unverified (`contextComplete: false`, `SECTION_MAPPING_NOT_VERIFIED`).
 
 ## 5. Search index evidence
 
-Migration 0009 proposes:
+**The API does not depend on any extension.** Description search uses
+`to_tsvector` / `websearch_to_tsquery` (core PostgreSQL), and HS-code matching
+uses `regexp_replace` (also core). The live endpoint was returning `503` because
+of a parameter-binding bug, not a missing extension or index.
+
+Migration 0009 (core, no extension) proposes:
 
 - `GIN (to_tsvector('simple', COALESCE(description, '')))` — matches the
   application's query exactly.
-- `GIN (description gin_trgm_ops)` — partial/typo tolerance.
 - `((regexp_replace(hs_code, '[^0-9]', '', 'g')))` — exact/prefix code lookup.
+- `(schedule_type)` — schedule filtering and the distinction between
+  `MAIN_TARIFF` (5,760 rows) and `SENSITIVE_ITEMS` (206 rows).
+
+Migration 0010 is **optional** and isolated because it requires the `pg_trgm`
+extension and the `CREATE EXTENSION` privilege:
+
+- `GIN (description gin_trgm_ops)` — partial/typo tolerance.
 
 A stored generated `hs_code_normalized` column was considered and is **not**
 proposed yet: it depends on confirming stored code formats and duplicate
