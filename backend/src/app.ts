@@ -1,6 +1,7 @@
-import express, { type Express } from 'express';
+import express, { type Express, type RequestHandler } from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
+import helmetModule from 'helmet';
+import type { HelmetOptions } from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
@@ -11,6 +12,18 @@ import { requestId } from './middleware/request-id.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { healthRouter } from './modules/health/health.routes.js';
 import { buildApiRouter } from './routes/index.js';
+
+/**
+ * Helmet publishes dual CJS/ESM typings. Hosts that type-check with different
+ * module-interop settings can see the default import as the module namespace
+ * rather than the callable factory, which fails with TS2349 at the call site
+ * ("This expression is not callable"). Assert the callable signature once here,
+ * so the middleware stays identical and the build does not depend on the host's
+ * TypeScript flags.
+ */
+const helmet = helmetModule as unknown as (
+  options?: Readonly<HelmetOptions>,
+) => RequestHandler;
 
 /**
  * Express application factory.
