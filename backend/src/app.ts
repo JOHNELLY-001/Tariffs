@@ -94,3 +94,15 @@ export function createApp(): Express {
 
   return app;
 }
+
+/**
+ * Shared application instance.
+ *
+ * Vercel's Node runtime loads this module and expects its default export to be
+ * the Express application (a function/server), not the result of `app.listen()`.
+ * `server.ts` keeps owning the standalone `listen()` lifecycle; this export only
+ * exposes the configured app so serverless hosts can serve it directly.
+ */
+export const app = createApp();
+
+export default app;
