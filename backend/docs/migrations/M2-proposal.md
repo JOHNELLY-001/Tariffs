@@ -5,6 +5,10 @@ No migration in this directory has been executed against any database. The
 runner refuses to apply or roll back unless `ALLOW_MIGRATE=true` is set and the
 corresponding flag is passed.
 
+The finalized 97-row mapping and the per-migration readiness review are in
+[`database-readiness-review.md`](./database-readiness-review.md). The mapping
+artifact is `migrations/data/chapter_section_mapping.csv`.
+
 ## 1. Why these changes
 
 | Requirement | Current state (documented baseline) | Proposed change |
@@ -26,8 +30,12 @@ The documentation is not authoritative over the database. Run at least:
 ```bash
 npm run db:check                                   # read-only inspection
 npm run db:migrate -- --status                     # discovery + checksums
-npm run db:migrate                                 # dry run: preflights only
 ```
+
+The all-pending dry run (`npm run db:migrate`) cannot validate `0004`/`0007`
+before `0002`/`0005` are applied, because those preflights reference the new
+columns. See the staging note in
+[`database-readiness-review.md`](./database-readiness-review.md#65-preflight).
 
 `db:check` must confirm before approval:
 
@@ -43,13 +51,13 @@ npm run db:migrate                                 # dry run: preflights only
 Anything that contradicts this proposal stops the process — the proposal is
 updated, not forced.
 
-### 2.1 Live inspection result (2026-11-10)
+### 2.1 Live inspection result (2026-11-11)
 
 Read-only inspection confirmed:
 
 - Counts match the baseline: 5,966 / 97 / 21 / 76.
-- **Zero extensions installed**; `pg_trgm` is therefore *not* available today.
-  This affects only optional migration 0010 — search works without it.
+- **Only `plpgsql` is installed**; `pg_trgm` is available on the server but not
+  installed. This affects only optional migration 0010 — search works without it.
 - `cet_tariffs` columns: `id bigint`, `hs_code varchar NOT NULL`,
   `description text NOT NULL`, `quantity text`, `rate text`,
   `source_page integer`, `extraction_phase integer`, `created_at timestamptz`,
@@ -78,6 +86,11 @@ Read-only inspection confirmed:
 | 0009 | Core search + schedule indexes (no extension) | `cet_tariffs` large enough that a non-concurrent build needs review | Drop the three indexes |
 | 0010 | **Optional** `pg_trgm` + trigram index | `pg_trgm` unavailable, or table needs a non-concurrent review | Drop the trigram index (extension retained) |
 
+Classification: 0001–0007 and 0009 are essential (0009 for production
+performance); 0008 and 0010 are optional. The full per-migration impact and
+rollback review is in
+[`database-readiness-review.md`](./database-readiness-review.md#4-migration-by-migration-review).
+
 Each migration is a four-file set:
 
 - `.preflight.sql` — returns **blocking rows**; any row aborts before writes.
@@ -89,28 +102,35 @@ Each migration is a four-file set:
 specification requires owner confirmation first, including the treatment of
 reserved Chapter 77.
 
-## 4. Chapter→section mapping (0003) — blocking input
+## 4. Chapter→section mapping (0003) — finalized, awaiting approval
 
 `migrations/data/chapter_section_mapping.template.csv` defines the required
-staging shape:
+staging shape. The finalized artifact is
+`migrations/data/chapter_section_mapping.csv`:
 
 ```text
 chapter_code,section_code,source_page,source_reference
 ```
 
-Rules:
+Rules applied:
 
-- One row per chapter, all **97** chapters, sourced from the
-  `CET 2022 VERSION updated June 2025` PDF.
-- `source_page` and `source_reference` are mandatory; the preflight rejects rows
-  without them.
-- Membership is **never** inferred from chapter order or HS numbering.
-- Chapter 77 (reserved) must be mapped or explicitly flagged for a separate
-  decision — not guessed.
+- One row per chapter, all **97** chapters.
+- 97 distinct chapter codes and 21 distinct section codes.
+- `source_page` and `source_reference` are present on every row; the preflight
+  rejects rows without them.
+- Membership is **never** inferred at query time from chapter order or HS
+  numbering.
+- Chapter 77 is recorded explicitly under Section XV, flagged as reserved, with
+  zero tariff lines. See the decision in
+  [`database-readiness-review.md`](./database-readiness-review.md#33-chapter-77-decision-explicit-not-inferred).
 
-Until this file exists and is reviewed, migration 0003/0004 cannot proceed. The
-backend remains fully functional without them: section context is reported as
-unverified (`contextComplete: false`, `SECTION_MAPPING_NOT_VERIFIED`).
+The backend remains fully functional without 0003/0004: section context is
+reported as unverified (`contextComplete: false`,
+`SECTION_MAPPING_NOT_VERIFIED`) until the mapping is applied.
+
+The original CET PDF is not stored in this repository. `source_page` values come
+from the chapter pages already extracted into `cet_chapter_notes`; owner
+confirmation of those references is part of the approval gate.
 
 ## 5. Search index evidence
 
@@ -143,32 +163,42 @@ and include the comparison in the approval record.
 
 ## 6. Apply procedure (only after approval)
 
+The full Neon-branch sequence — baseline fingerprints, staging-table creation and
+CSV load, staging verification, preflight caveat, apply, post-apply checks,
+rollback drill and query-plan capture — is in
+[`database-readiness-review.md`](./database-readiness-review.md#6-neon-branch-staging-sequence).
+
+Summary:
+
 ```bash
 # 1. Confirm the branch/staging target
 npm run db:migrate -- --status
 
-# 2. Dry run: preflight only
-npm run db:migrate
+# 2. Create and load chapter_section_mapping_staging from
+#    migrations/data/chapter_section_mapping.csv (see the review)
 
 # 3. Apply on a Neon branch first
 ALLOW_MIGRATE=true npm run db:migrate -- --apply
 
-# 4. Verify counts unchanged, then apply to production
-ALLOW_MIGRATE=true npm run db:migrate -- --apply
+# 4. Verify counts/fingerprints unchanged and run the rollback drill
+# 5. Only then schedule production with a named approver and restore point
 ```
 
-Rollback (same review discipline):
+Rollback (same review discipline, reverse dependency order):
 
 ```bash
-ALLOW_MIGRATE=true npm run db:migrate -- --down 0009 --confirm-rollback
+ALLOW_MIGRATE=true npm run db:migrate -- --down 0010 --confirm-rollback
 ```
 
 ## 7. Approval checklist
 
-- [ ] Live schema inspection attached (`npm run db:check` output).
-- [ ] Row counts match the baseline, or differences explained.
-- [ ] 97-row mapping reviewed with source-page references; Chapter 77 decided.
-- [ ] HS-code format and duplicate analysis attached.
+- [x] Live schema inspection attached (`npm run db:check` output).
+- [x] Row counts match the baseline (5,966 / 97 / 21 / 76).
+- [x] 97-row mapping written with source-page references; Chapter 77 explicitly
+      recorded under Section XV as reserved.
+- [x] HS-code format and duplicate analysis attached (0 malformed, 0 unresolved).
+- [ ] Mapping and Chapter 77 decision approved by the owner.
 - [ ] Rate-string sample attached, including `SI` and compound forms.
 - [ ] Index plan compared on a Neon branch.
 - [ ] Named approver and target database recorded.
+- [ ] Neon branch run and rollback drill passed.

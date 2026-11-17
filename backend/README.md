@@ -43,6 +43,10 @@ npm run dev
 The process fails fast if configuration is invalid. `.env.local` is git-ignored;
 only `.env.example` is committed.
 
+For production build/start commands, required secrets, a Render example and
+post-deploy checks, see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Do not run
+database migrations as part of the deployment.
+
 ### Environment variables
 
 | Variable | Purpose |
@@ -167,8 +171,10 @@ Migration files live in `migrations/` as `.preflight.sql`, `.up.sql`,
 privilege. The API is fully functional with neither index applied.
 
 The proposal and its approval gates are documented in
-[`docs/migrations/M2-proposal.md`](docs/migrations/M2-proposal.md). No migration
-has been applied to any database.
+[`docs/migrations/M2-proposal.md`](docs/migrations/M2-proposal.md). The finalized
+97-row mapping, per-migration review and Neon-branch staging sequence are in
+[`docs/migrations/database-readiness-review.md`](docs/migrations/database-readiness-review.md).
+No migration has been applied to any database.
 
 ## Project layout
 
