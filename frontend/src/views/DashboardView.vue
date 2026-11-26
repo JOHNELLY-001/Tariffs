@@ -61,8 +61,7 @@ const workflowSteps = [
           </h2>
           <p class="mt-3 text-sm leading-6 text-ink-muted sm:text-base">
             Explore the tariff schedule and prepare a transparent, auditable import-cost
-            breakdown. Every figure is resolved from backend rules — nothing is estimated or
-            calculated in the browser.
+            breakdown.
           </p>
 
           <div class="mt-6 flex flex-col gap-3 sm:flex-row">
