@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { validate } from '../../middleware/validate-request.js';
 import * as controller from './calculation.controller.js';
-import { importCostRequestSchema } from './calculation.schemas.js';
+import { importCostRequestSchema, calculationIdParamsSchema } from './calculation.schemas.js';
 
 export const calculationRouter: Router = Router();
 
@@ -13,4 +13,10 @@ calculationRouter.post(
   '/calculations/import-cost',
   validate(importCostRequestSchema, 'body'),
   controller.calculateImportCost,
+);
+
+calculationRouter.get(
+  '/calculations/import-cost/:calculationId',
+  validate(calculationIdParamsSchema, 'params'),
+  controller.getCalculationById,
 );

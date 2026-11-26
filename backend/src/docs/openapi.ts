@@ -529,7 +529,7 @@ export function buildOpenApiDocument(apiBasePath: string) {
           tags: ['Calculations'],
           summary: 'Import-cost calculation foundation',
           description:
-            'Validates the request and reports `unsupported` or `needs_review` until verified valuation, duty and tax rules are configured. No amount is invented.',
+            'Runs the integrated tariff-resolution, valuation, exchange-rate and tax-calculation workflow. Returns `completed`, `needs_review`, `unsupported` or `failed`; totals are null unless completed.',
           requestBody: jsonBody(fromZod(importCostRequestSchema)),
           responses: {
             '200': okResponse('Calculation contract result.', { $ref: '#/components/schemas/ImportCostResult' }),

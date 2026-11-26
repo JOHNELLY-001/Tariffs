@@ -48,6 +48,7 @@ export const REQUEST = {
 
 export const CALCULATION_STATES = [
   'calculated',
+  'completed',
   'partially_calculated',
   'unsupported',
   'needs_review',
