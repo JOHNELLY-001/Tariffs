@@ -102,11 +102,7 @@ function pageLabel(page: number | null): string {
       </div>
     </dl>
 
-    <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <p class="text-[11px] leading-5 text-ink-subtle">
-        The backend receives tariff ID #{{ tariff.id }} with this HS code. No selection is
-        inferred.
-      </p>
+    <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
       <div class="flex shrink-0 flex-wrap gap-2">
         <button type="button" class="btn-secondary px-3 py-2 text-xs" @click="emit('browse')">
           Change tariff

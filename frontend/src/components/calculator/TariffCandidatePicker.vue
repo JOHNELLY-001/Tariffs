@@ -71,34 +71,20 @@ function pageLabel(page: number | null): string {
             {{ candidate.description || 'No product description recorded in the source.' }}
           </span>
 
-          <span class="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-line bg-surface/80 p-2.5">
-            <span class="col-span-2">
-              <span class="block text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
-                Original rate
-              </span>
+          <span class="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-line pt-2.5 text-xs">
+            <span>
+              <span class="text-ink-subtle">Rate </span>
               <span
-                class="mt-0.5 block break-words font-mono text-sm font-semibold"
+                class="font-mono font-semibold"
                 :class="rateIsSensitive(candidate) ? 'text-warning-ink' : 'text-ink'"
               >
                 {{ candidate.rate ?? 'Not recorded' }}
               </span>
             </span>
-            <span>
-              <span class="block text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
-                Record ID
-              </span>
-              <span class="mt-0.5 block font-mono text-xs text-ink-muted">
-                #{{ candidate.id }}
-              </span>
+            <span class="text-ink-subtle">
+              Source {{ pageLabel(candidate.sourcePage) }}
             </span>
-            <span>
-              <span class="block text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
-                Source page
-              </span>
-              <span class="mt-0.5 block text-xs text-ink-muted">
-                {{ pageLabel(candidate.sourcePage) }}
-              </span>
-            </span>
+            <span class="font-mono text-ink-subtle">#{{ candidate.id }}</span>
           </span>
         </span>
       </label>

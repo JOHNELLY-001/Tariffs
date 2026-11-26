@@ -149,11 +149,6 @@ onBeforeUnmount(() => {
                 </dl>
               </section>
             </div>
-
-            <p class="mt-4 rounded-lg border border-line bg-surface-muted/50 px-4 py-3 text-xs leading-5 text-ink-muted">
-              Submitting sends this request once. The button is disabled while the request is in
-              progress to prevent duplicate calculations.
-            </p>
           </div>
 
           <footer class="flex flex-col-reverse gap-2 border-t border-line bg-surface px-5 py-4 sm:flex-row sm:justify-end sm:px-6">

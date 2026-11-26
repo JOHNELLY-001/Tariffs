@@ -5,7 +5,6 @@ import { useRouter } from 'vue-router';
 import {
   ArrowUpRight,
   Calculator,
-  Check,
   CircleCheck,
   CircleX,
   LoaderCircle,
@@ -536,23 +535,9 @@ onMounted(() => {
             Build an import-cost calculation
           </h2>
           <p class="mt-3 text-sm leading-6 text-ink-muted sm:text-base">
-            Identify the exact tariff record, value the shipment and describe the quantity. 
+            Select the exact tariff record, value the shipment and describe the quantity. The
+            backend performs valuation, tariff resolution and every charge calculation.
           </p>
-
-          <div class="mt-5 flex flex-wrap gap-2 text-xs font-medium">
-            <span class="rounded-full border border-line bg-surface-muted/60 px-3 py-1 text-ink-muted">
-              1 · Tariff
-            </span>
-            <span class="rounded-full border border-line bg-surface-muted/60 px-3 py-1 text-ink-muted">
-              2 · Valuation
-            </span>
-            <span class="rounded-full border border-line bg-surface-muted/60 px-3 py-1 text-ink-muted">
-              3 · Review
-            </span>
-            <span class="rounded-full border border-line bg-surface-muted/60 px-3 py-1 text-ink-muted">
-              4 · Result
-            </span>
-          </div>
         </div>
 
       </div>
@@ -569,7 +554,7 @@ onMounted(() => {
         <CalculatorSection
           step="1"
           title="Product identification"
-          description="Enter the HS code and select one exact tariff record. Multiple records are never selected automatically."
+          description="Enter the HS code and select one exact tariff record."
         >
           <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <FormField
@@ -658,9 +643,8 @@ onMounted(() => {
                     Multiple tariff records share this HS code
                   </p>
                   <p class="mt-1 text-sm leading-6 text-ink-muted">
-                    {{ candidates.length }} records were returned. Compare the schedule, original
-                    rate and source page, then choose the record to use. No record is selected
-                    automatically.
+                    {{ candidates.length }} records share this HS code. Compare schedule and rate,
+                    then choose the record to use. Nothing is selected automatically.
                   </p>
                 </div>
               </div>
@@ -686,7 +670,7 @@ onMounted(() => {
         <CalculatorSection
           step="2"
           title="Import information"
-          description="Confirm where the goods come from and the date used to select effective rules."
+          description="Confirm the origin and the date used to select effective rules."
         >
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <FormField
@@ -944,7 +928,7 @@ onMounted(() => {
         <CalculatorSection
           step="4"
           title="Quantity"
-          description="Optional. Provide a quantity and unit when the tariff rate or tax rule depends on it."
+          description="Optional. Provide a quantity and unit when a rate or tax rule depends on it."
         >
           <div class="grid gap-4 sm:grid-cols-2">
             <FormField
@@ -1007,7 +991,7 @@ onMounted(() => {
         <CalculatorSection
           step="5"
           title="Additional information"
-          description="Only fields supported by the import-cost contract are shown here."
+          description="Optional reference and preferential-treatment request."
         >
           <label
             class="flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-surface-muted/30 p-4"
@@ -1180,29 +1164,6 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="surface-card overflow-hidden">
-          <header class="border-b border-line px-5 py-4">
-            <h2 class="text-sm font-semibold tracking-tight text-ink">Before you calculate</h2>
-          </header>
-          <ul class="space-y-3 px-5 py-4 text-xs leading-5 text-ink-muted">
-            <li class="flex gap-2">
-              <Check class="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
-              <span>The selected tariff ID must belong to the submitted HS code.</span>
-            </li>
-            <li class="flex gap-2">
-              <Check class="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
-              <span>Monetary values are non-negative and sent in the chosen currency.</span>
-            </li>
-            <li class="flex gap-2">
-              <Check class="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
-              <span>
-                Unverified valuation and tax rules may return a
-                <span class="font-semibold text-ink">needs-review</span> or
-                <span class="font-semibold text-ink">unsupported</span> state.
-              </span>
-            </li>
-          </ul>
-        </section>
       </aside>
     </div>
 

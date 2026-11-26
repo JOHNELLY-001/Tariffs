@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowUpRight, Check } from '@lucide/vue';
-import type { MatchType } from '@/types/api';
+import type { MatchType, RateKind } from '@/types/api';
 import type { TariffSearchRow } from '@/composables/useTariffSearch';
 import ScheduleBadge from './ScheduleBadge.vue';
 
@@ -25,41 +25,55 @@ const matchLabels: Record<MatchType, string> = {
   description: 'Description',
 };
 
-function matchLabel(row: TariffSearchRow): string {
-  return row.matchType ? matchLabels[row.matchType] : 'Exact HS code';
-}
+const rateKindLabels: Record<RateKind, string> = {
+  percentage: 'Percentage',
+  specific: 'Specific',
+  compound: 'Compound',
+  sensitive_item: 'Sensitive item',
+  free: 'Free',
+  unknown: 'Rate form not recorded',
+};
 
-function matchNote(row: TariffSearchRow): string | null {
-  if (row.relevance === null) return null;
-  return `Text relevance ${Math.round(row.relevance * 100)}%`;
-}
-
-function rateIsSensitive(row: TariffSearchRow): boolean {
+function isSensitive(row: TariffSearchRow): boolean {
   return (
     row.rateAnalysis.isSensitiveItem ||
     (row.rate ?? '').trim().toUpperCase() === 'SI'
   );
 }
 
-function pageLabel(page: number | null): string {
-  return page === null ? 'Not recorded' : String(page);
+function rateKindLabel(row: TariffSearchRow): string {
+  if (isSensitive(row)) return rateKindLabels.sensitive_item;
+  return rateKindLabels[row.rateAnalysis.kind] ?? rateKindLabels.unknown;
+}
+
+/** Chapter and heading are returned fields; the HS code is the tariff line. */
+function hierarchy(row: TariffSearchRow): string {
+  const parts: string[] = [];
+  if (row.chapterCode) parts.push(`Chapter ${row.chapterCode}`);
+  if (row.heading) parts.push(`Heading ${row.heading}`);
+  return parts.join(' · ');
+}
+
+function matchLabel(row: TariffSearchRow): string | null {
+  return row.matchType ? matchLabels[row.matchType] : null;
 }
 </script>
 
 <template>
-  <div v-if="loading" class="space-y-3" role="status" aria-live="polite">
+  <div v-if="loading" class="space-y-2" role="status" aria-live="polite">
     <span class="sr-only">Searching the tariff schedule…</span>
     <div
       v-for="index in 4"
       :key="index"
-      class="h-16 animate-pulse rounded-lg border border-line bg-surface-muted/60"
+      class="h-14 animate-pulse rounded-lg border border-line bg-surface-muted/60"
       aria-hidden="true"
     />
   </div>
 
   <template v-else>
+    <!-- Desktop: comparison list -->
     <div class="hidden overflow-x-auto rounded-lg border border-line md:block">
-      <table class="w-full min-w-[880px] text-left text-sm">
+      <table class="w-full min-w-[720px] text-left text-sm">
         <caption class="sr-only">
           Tariff search results. Every matching record is listed; none is selected automatically.
           <template v-if="selectable">
@@ -68,12 +82,10 @@ function pageLabel(page: number | null): string {
         </caption>
         <thead class="bg-surface-muted/80 text-[11px] uppercase tracking-wider text-ink-subtle">
           <tr>
-            <th scope="col" class="px-4 py-3 font-semibold">HS code</th>
+            <th scope="col" class="px-4 py-3 font-semibold">Tariff line</th>
             <th scope="col" class="px-4 py-3 font-semibold">Description</th>
-            <th scope="col" class="px-4 py-3 font-semibold">Recorded rate</th>
+            <th scope="col" class="px-4 py-3 font-semibold">Rate</th>
             <th scope="col" class="px-4 py-3 font-semibold">Schedule</th>
-            <th scope="col" class="px-4 py-3 font-semibold">Source page</th>
-            <th scope="col" class="px-4 py-3 font-semibold">Record</th>
             <th scope="col" class="px-4 py-3 text-right font-semibold">Actions</th>
           </tr>
         </thead>
@@ -84,37 +96,34 @@ function pageLabel(page: number | null): string {
             class="align-top transition-colors hover:bg-surface-muted/40"
             :class="selectedId === row.id ? 'bg-accent-soft/35' : ''"
           >
-            <td class="px-4 py-4">
+            <td class="min-w-[11rem] px-4 py-4">
               <p class="font-mono text-sm font-semibold text-ink">{{ row.hsCode || '—' }}</p>
-              <p class="mt-1 text-[11px] font-medium text-ink-subtle">
-                {{ matchLabel(row) }}
-                <template v-if="matchNote(row)"> · {{ matchNote(row) }}</template>
+              <p v-if="hierarchy(row)" class="mt-1 text-[11px] text-ink-subtle">
+                {{ hierarchy(row) }}
+              </p>
+              <p v-if="matchLabel(row)" class="mt-0.5 text-[11px] text-ink-subtle">
+                {{ matchLabel(row) }} match
               </p>
             </td>
-            <td class="max-w-[26rem] px-4 py-4">
-              <p class="line-clamp-3 text-sm leading-6 text-ink-muted">
+            <td class="max-w-[30rem] px-4 py-4">
+              <p class="text-sm leading-6 text-ink">
                 {{ row.description || 'No description recorded in the source.' }}
               </p>
             </td>
             <td class="px-4 py-4">
-              <span
-                v-if="rateIsSensitive(row)"
-                class="inline-flex items-center rounded-md border border-warning/35 bg-warning-soft px-2 py-1 font-mono text-xs font-semibold text-warning-ink"
-                title="Sensitive Items reference, preserved exactly as recorded"
+              <p
+                class="font-mono text-sm font-semibold"
+                :class="isSensitive(row) ? 'text-warning-ink' : 'text-ink'"
               >
-                {{ row.rate ?? 'Rate not recorded' }}
-              </span>
-              <span v-else class="font-mono text-sm text-ink">{{ row.rate ?? 'Not recorded' }}</span>
+                {{ row.rate ?? 'Not recorded' }}
+              </p>
+              <p class="mt-0.5 text-[11px] text-ink-subtle">{{ rateKindLabel(row) }}</p>
             </td>
             <td class="px-4 py-4">
               <ScheduleBadge :schedule="row.scheduleType" />
             </td>
-            <td class="px-4 py-4 text-sm text-ink-muted">{{ pageLabel(row.sourcePage) }}</td>
-            <td class="px-4 py-4">
-              <span class="font-mono text-xs text-ink-subtle">#{{ row.id }}</span>
-            </td>
             <td class="px-4 py-4 text-right">
-              <div class="flex flex-col items-end gap-2">
+              <div class="flex flex-col items-end gap-1.5">
                 <button
                   v-if="selectable"
                   type="button"
@@ -141,56 +150,38 @@ function pageLabel(page: number | null): string {
       </table>
     </div>
 
+    <!-- Mobile: stacked records -->
     <div class="space-y-3 md:hidden">
       <article
         v-for="row in items"
         :key="row.id"
-        class="rounded-xl border border-line bg-surface p-4 shadow-sm"
+        class="rounded-lg border border-line bg-surface p-4"
         :class="selectedId === row.id ? 'border-accent ring-1 ring-accent/20' : ''"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <p class="font-mono text-base font-semibold text-ink">{{ row.hsCode || '—' }}</p>
-            <p class="mt-1 text-[11px] font-medium text-ink-subtle">
-              {{ matchLabel(row) }}
-              <template v-if="matchNote(row)"> · {{ matchNote(row) }}</template>
+            <p v-if="hierarchy(row)" class="mt-1 text-[11px] text-ink-subtle">
+              {{ hierarchy(row) }}
             </p>
           </div>
           <ScheduleBadge :schedule="row.scheduleType" />
         </div>
 
-        <p class="mt-3 text-sm leading-6 text-ink-muted">
+        <p class="mt-3 text-sm leading-6 text-ink">
           {{ row.description || 'No description recorded in the source.' }}
         </p>
 
-        <dl class="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-line bg-surface-muted/50 p-3">
-          <div class="col-span-2">
-            <dt class="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
-              Recorded rate
-            </dt>
-            <dd class="mt-1">
-              <span
-                v-if="rateIsSensitive(row)"
-                class="inline-flex items-center rounded-md border border-warning/35 bg-warning-soft px-2 py-1 font-mono text-xs font-semibold text-warning-ink"
-              >
-                {{ row.rate ?? 'Rate not recorded' }}
-              </span>
-              <span v-else class="font-mono text-sm text-ink">{{ row.rate ?? 'Not recorded' }}</span>
-            </dd>
-          </div>
-          <div>
-            <dt class="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
-              Source page
-            </dt>
-            <dd class="mt-1 text-sm text-ink-muted">{{ pageLabel(row.sourcePage) }}</dd>
-          </div>
-          <div>
-            <dt class="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
-              Record ID
-            </dt>
-            <dd class="mt-1 font-mono text-xs text-ink-muted">#{{ row.id }}</dd>
-          </div>
-        </dl>
+        <div class="mt-3 flex items-baseline gap-2">
+          <span class="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">Rate</span>
+          <span
+            class="font-mono text-sm font-semibold"
+            :class="isSensitive(row) ? 'text-warning-ink' : 'text-ink'"
+          >
+            {{ row.rate ?? 'Not recorded' }}
+          </span>
+          <span class="text-[11px] text-ink-subtle">· {{ rateKindLabel(row) }}</span>
+        </div>
 
         <button
           v-if="selectable"
@@ -209,7 +200,7 @@ function pageLabel(page: number | null): string {
           :aria-label="`View tariff details for ${row.hsCode || `record ${row.id}`}`"
           @click="emit('inspect', row.id)"
         >
-          View tariff details
+          View details
           <ArrowUpRight class="h-4 w-4" aria-hidden="true" />
         </button>
       </article>
