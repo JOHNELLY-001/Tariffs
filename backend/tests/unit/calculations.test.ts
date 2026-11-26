@@ -26,11 +26,11 @@ describe('verified rules registry', () => {
 });
 
 describe('calculation stages never invent amounts', () => {
-  it('returns unsupported valuation without a verified rule', () => {
-    const result = valuate({ customsValue: 1000, currency: 'KES' });
-    expect(result.state).toBe('unsupported');
+  it('returns needs_review valuation without a verified rule', async () => {
+    const result = await valuate({ invoiceValue: 1000, currency: 'KES' });
+    expect(result.state).toBe('needs_review');
     expect(result.customsValue).toBeNull();
-    expect(result.adjustments).toEqual([]);
+    expect(result.components.length).toBeGreaterThan(0);
   });
 
   it('returns unsupported duty for a percentage rate', () => {
